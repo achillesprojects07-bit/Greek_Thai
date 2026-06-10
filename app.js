@@ -23,12 +23,21 @@ function loadVoices(){voices = speechSynthesis.getVoices ? speechSynthesis.getVo
 if('speechSynthesis' in window){loadVoices(); speechSynthesis.onvoiceschanged=loadVoices;}
 function speakGreek(text){
   if(!('speechSynthesis' in window)){toast('ไม่มีเสียงในเครื่องนี้ / Audio not available'); return;}
-  try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.lang='el-GR'; const v=voices.find(x=>/el|Greek/i.test(x.lang+x.name)); if(v)u.voice=v; u.rate=.82; speechSynthesis.speak(u); }catch(e){toast('เสียงกรีกไม่พร้อม / Greek audio not ready');}
-}
-async function startRec(id){
-  if(!navigator.mediaDevices || !window.MediaRecorder){toast('ไม่สามารถบันทึกเสียงได้ / Recording is not available'); return;}
-  try{ const stream=await navigator.mediaDevices.getUserMedia({audio:true}); chunks=[]; recordingFor=id; mediaRecorder=new MediaRecorder(stream); mediaRecorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)}; mediaRecorder.onstop=()=>{const blob=new Blob(chunks,{type:'audio/webm'}); recordings[recordingFor]=URL.createObjectURL(blob); stream.getTracks().forEach(t=>t.stop()); toast('บันทึกแล้ว / Saved recording'); render();}; mediaRecorder.start(); toast('กำลังบันทึกเสียง / Recording...'); render(); }
-  catch(e){toast('ไม่สามารถบันทึกเสียงได้ / Recording is not available');}
+  try{
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'el-GR';
+    // strict match: language code must START with "el"
+    const v = voices.find(x => x.lang && x.lang.toLowerCase().startsWith('el'));
+    if(v){
+      u.voice = v;
+    } else {
+      toast('ไม่มีเสียงภาษากรีกในเครื่อง — ติดตั้งใน Google TTS / No Greek voice installed');
+    }
+    u.rate = 0.9;   // 0.82 is slow enough to sound droney; 0.9 is clearer
+    u.pitch = 1;
+    speechSynthesis.speak(u);
+  }catch(e){toast('เสียงกรีกไม่พร้อม / Greek audio not ready');}
 }
 function stopRec(){ if(mediaRecorder && mediaRecorder.state==='recording'){mediaRecorder.stop();} else toast('ยังไม่ได้บันทึก / Not recording');}
 function playRec(id){ if(recordings[id]) new Audio(recordings[id]).play(); else toast('ยังไม่มีเสียงของฉัน / No recording yet');}
