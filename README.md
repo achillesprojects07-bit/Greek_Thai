@@ -25,6 +25,10 @@ Greek Daily Companion — Thai Mode is a simple, audio-first and picture-first G
 - Android/Honor-friendly PWA support
 - Home screen install support through manifest and service worker
 
+## V1.3.1 Fix
+- Fixed a crash in voice loading (unguarded speechSynthesis reference) that could stop all scripts and make every button unclickable
+- Cache bumped to v1-3-1
+
 ## V1.3 Changes
 - New blue and white theme across app, manifest, and theme color
 - Audio Setup screen: shows detected Greek voice name, Test Greek Voice button, install instructions when no Greek voice found

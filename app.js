@@ -21,7 +21,7 @@ function toast(msg){toastEl.textContent=msg; toastEl.classList.add('show'); clea
 function esc(s){return String(s||'').replace(/[&<>"]/g, ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));}
 
 let voices=[];
-function loadVoices(){voices = speechSynthesis.getVoices ? speechSynthesis.getVoices() : [];}
+function loadVoices(){voices = ('speechSynthesis' in window && speechSynthesis.getVoices) ? speechSynthesis.getVoices() : [];}
 if('speechSynthesis' in window){loadVoices(); speechSynthesis.onvoiceschanged=loadVoices;}
 function findGreekVoice(){ if(!voices.length) loadVoices(); return voices.find(x=>x.lang && x.lang.toLowerCase().startsWith('el')) || null; }
 let slowMode = localStorage.getItem('greekThaiSlow')==='1';
