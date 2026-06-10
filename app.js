@@ -4,7 +4,10 @@ const CONTENT = [{"id": "start_good_morning", "group": "start", "type": "phrase"
 const GROUPS = [
   ['all','All / ทั้งหมด'],['start','Start Here'],['oneword','One-Word'],['numbers','Numbers'],['directions','Directions'],['time','Time'],['talking','Talking'],['hearing','What He Might Say'],['foodhome','Food at Home'],['cafe','Café & Bakery'],['restaurant','Restaurant'],['goingout','Going Out'],['comfort','Comfort & Help']
 ];
+const APP_VERSION='V1.3.2';
 const app = document.getElementById('app');
+// Visible error reporter: if anything crashes, show it on screen instead of silently killing all buttons
+window.onerror=function(msg,src,line){ try{ var d=document.createElement('div'); d.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#b00020;color:#fff;padding:10px 14px;font:13px/1.4 system-ui;white-space:pre-wrap'; d.textContent='App error (screenshot this): '+msg+' @ line '+line; document.body.appendChild(d);}catch(e){} };
 const toastEl = document.getElementById('toast');
 let screen = 'home', activeGroup='all', matchState=null, gameState=null;
 let recordings = {};
@@ -53,7 +56,7 @@ function header(title,sub=''){return `<div class="screen-head"><button class="ba
 function go(s){screen=s; activeGroup='all'; matchState=null; gameState=null; render(); window.scrollTo(0,0)}
 
 function renderHome(){const c=counts(); const today=CONTENT.filter(x=>['start_good_morning','start_no_understand','talking_want_water'].includes(x.id)); app.innerHTML=`
- <div class="topbar"><div class="brand-block"><h1>Greek Daily Companion</h1><p>Thai Mode · ภาษากรีกสำหรับชีวิตประจำวัน</p></div><div class="badge">V1</div></div>
+ <div class="topbar"><div class="brand-block"><h1>Greek Daily Companion</h1><p>Thai Mode · ภาษากรีกสำหรับชีวิตประจำวัน</p></div><div class="badge">${APP_VERSION}</div></div>
  <section class="hero"><h2>Start Today<br>เริ่มวันนี้</h2><p>Listen, see, tap, repeat. Greek with Thai and English support.</p><button class="primary-btn" onclick="startToday()">▶ เริ่มวันนี้ / Start Today</button></section>
  <div class="section-title"><h2>Progress</h2><span>${c.total} cards</span></div><div class="stats-row"><div class="stat-card"><strong>${c.m}</strong><span>Mastered</span></div><div class="stat-card"><strong>${c.r}</strong><span>Needs Review</span></div><div class="stat-card"><strong>${c.u}</strong><span>Unmarked</span></div></div>
  <div class="section-title"><h2>Learn</h2><span>4 modes</span></div><div class="grid">
