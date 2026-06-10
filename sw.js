@@ -1,4 +1,4 @@
-const CACHE_NAME = 'greek-daily-thai-v1-3-2';
+const CACHE_NAME = 'greek-daily-thai-v1-0-1';
 const ASSETS = [
   './',
   './index.html',

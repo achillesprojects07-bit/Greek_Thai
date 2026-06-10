@@ -1,7 +1,7 @@
 # Greek Daily Companion — Thai Mode
 
 ## Version
-V1.3 — Blue Theme, Audio Setup, Saved Phrases, Merged Duplicates
+V1.1 — Translator / Saved Phrases Build
 
 ## Build Date
 June 10, 2026
@@ -24,26 +24,6 @@ Greek Daily Companion — Thai Mode is a simple, audio-first and picture-first G
 - Saved phrase list stored in localStorage
 - Android/Honor-friendly PWA support
 - Home screen install support through manifest and service worker
-
-## V1.3.1 Fix
-- Fixed a crash in voice loading (unguarded speechSynthesis reference) that could stop all scripts and make every button unclickable
-- Cache bumped to v1-3-1
-
-## V1.3 Changes
-- New blue and white theme across app, manifest, and theme color
-- Audio Setup screen: shows detected Greek voice name, Test Greek Voice button, install instructions when no Greek voice found
-- Slow voice toggle (turtle mode, rate 0.65) saved in localStorage
-- Saved Phrases screen built for real: search all phrases, save them, add custom Greek/Thai/English phrases, play audio, delete; persists in localStorage
-- Bottom navigation now has 6 tabs including Saved
-- Merged 5 duplicate phrase cards (How much, I am hungry, I am full, This one please, Thank you very much) into single cards appearing in both categories; statuses migrate automatically; total master cards now 195
-- Service worker cache bumped to v1-3-0
-
-## V1.2 Changes
-- Speak Now and Vocab are now distinct: Vocab shows words and Start Here basics only (110 cards); Speak Now keeps all sentences (105 cards); overlap reduced from 105 to 15
-- Strict Greek voice detection: audio only plays with a real Greek (el-*) voice; otherwise shows a warning instead of robotic fallback
-- Fixed loose voice matching that could pick a wrong-language voice
-- Audio rate set to 0.9 with neutral pitch for clearer playback
-- Service worker cache bumped to v1-2-0
 
 ## V1.1 Changes
 - Added Translator / Saved Phrases mode
