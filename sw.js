@@ -1,4 +1,4 @@
-const CACHE_NAME = 'greek-daily-thai-v1-0-1';
+const CACHE_NAME = 'greek-daily-thai-v1-6-gta-audio';
 const ASSETS = [
   './',
   './index.html',

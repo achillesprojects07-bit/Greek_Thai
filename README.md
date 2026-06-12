@@ -1,67 +1,50 @@
 # Greek Daily Companion — Thai Mode
 
 ## Version
-V1.1 — Translator / Saved Phrases Build
+V1.6 — GTA Audio Engine Patch
 
 ## Build Date
-June 10, 2026
+June 12, 2026
 
-## Purpose
-Greek Daily Companion — Thai Mode is a simple, audio-first and picture-first Greek learning app for a Thai speaker living in a Greek home. It supports Greek, Thai, and English so the learner can understand the meaning and the household can check the phrase accuracy.
+## What changed in V1.6
+- Replaced the simpler Thai-mode audio engine with the more mature GTA-style Greek audio engine.
+- Added encoded audio button data attributes instead of relying only on inline `speakGreek(...)` strings.
+- Added speech chunking, hard reset, keep-alive/resume, watchdog reset, and soft failure handling.
+- Added a visible **Test Greek Voice** button on the dashboard.
+- Updated app badge to V1.6.
+- Added missing `icon-512.png`; the old service worker referenced it but the uploaded ZIP only had `icon-192.png`, which could break PWA caching.
+- Updated service worker cache name to force the browser to load the new files.
+- Added `notranslate` protection to reduce Chrome/Google Translate interference.
 
-## Main Features
-- Home dashboard with simple daily practice
-- Speak Now mode
-- Vocab mode with pictures/icons
-- Matching mode
-- Play mode
+## Why this patch exists
+The Greek-Thai build was not truly using the same audio engine as the GTA app. The GTA app has a more robust Greek speech system that handles Safari/Chrome speech stalls better. This patch brings that GTA-style approach into Greek Daily Companion.
+
+## Important testing notes
+1. Upload the full folder to GitHub Pages or another HTTPS host.
+2. Open the app in the browser.
+3. Hard refresh or clear site data if an older build was loaded before.
+4. Tap **Test Greek Voice**.
+5. It should read: `Καλημέρα. Γεια σας. Ευχαριστώ πολύ.`
+6. If the voice still sounds robotic, check the OS/browser Greek voice settings. The app can request `el-GR`, but the final sound comes from the device/browser TTS engine.
+
+## Included files
+- `index.html`
+- `styles.css`
+- `app.js`
+- `manifest.webmanifest`
+- `sw.js`
+- `README.md`
+- `icon-192.png`
+- `icon-512.png`
+
+## Core features
+- Speak Now
+- Vocab
+- Matching
+- Play Mode
 - Review Stack
-- Mastered / Needs Review / Unmarked status buttons
-- Status color changes and localStorage persistence
-- Greek speech audio using browser speech synthesis
-- Record My Voice / Stop / Hear My Voice support with safe fallback
-- Translator / Saved Phrases mode
-- Saved phrase list stored in localStorage
-- Android/Honor-friendly PWA support
-- Home screen install support through manifest and service worker
-
-## V1.1 Changes
-- Added Translator / Saved Phrases mode
-- Added bottom navigation Save button
-- Added dashboard Translator card
-- Added search across existing app phrases
-- Added custom saved phrase entry fields for Greek, Thai, and English
-- Added audio playback for saved Greek phrases
-- Added delete function for saved phrases
-- Updated service worker cache version
-
-## Files Included
-- index.html
-- styles.css
-- app.js
-- manifest.webmanifest
-- sw.js
-- icon-192.png
-- icon-512.png
-- README.md
-
-## Install on Honor Android Phone
-1. Upload the full app folder to GitHub Pages or another HTTPS web host.
-2. Open the app link in Chrome on the Honor phone.
-3. Tap the three-dot menu.
-4. Choose Add to Home screen or Install app.
-5. Tap the app icon from the phone home screen.
-
-## Important Notes
-- Microphone recording usually requires HTTPS. It may not work from a local file.
-- Service worker and install-to-home-screen features also require HTTPS or localhost.
-- The Translator is an offline saved phrase tool. It does not automatically translate new sentences from the internet.
-- Do not keep old cached versions active when uploading a new build. After upload, hard refresh or clear site data if the old version still appears.
-
-## Content Rules
-- No George mention inside the app.
-- No phone-answering category.
-- No visitor-heavy category.
-- Café & Bakery is separate from Restaurant / Eating Out.
-- Food at Home stays short and practical.
-- Thai is primary for understanding, English is visible for checking, Greek audio is primary for learning.
+- Mastered / Needs Review / Unmarked
+- Greek audio
+- Voice recording fallback
+- LocalStorage progress
+- PWA home-screen install support

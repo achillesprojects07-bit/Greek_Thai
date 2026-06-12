@@ -18,21 +18,196 @@ function counts(){let m=0,r=0,u=0; CONTENT.forEach(c=>{let s=statusOf(c.id); if(
 function toast(msg){toastEl.textContent=msg; toastEl.classList.add('show'); clearTimeout(window.toastTimer); window.toastTimer=setTimeout(()=>toastEl.classList.remove('show'),1800);}
 function esc(s){return String(s||'').replace(/[&<>"]/g, ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));}
 
-let voices=[];
-function loadVoices(){voices = speechSynthesis.getVoices ? speechSynthesis.getVoices() : [];}
-if('speechSynthesis' in window){loadVoices(); speechSynthesis.onvoiceschanged=loadVoices;}
-function speakGreek(text){
-  if(!('speechSynthesis' in window)){toast('ไม่มีเสียงในเครื่องนี้ / Audio not available'); return;}
-  try{
-    if(!voices.length) loadVoices();
-    const v = voices.find(x => x.lang && x.lang.toLowerCase().indexOf('el') === 0);
-    if(!v){ toast('ไม่มีเสียงภาษากรีกในเครื่อง — ติดตั้งเสียงกรีกก่อน / Greek voice not found. Please install Greek text-to-speech.'); return; }
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'el-GR'; u.voice = v; u.rate = 0.9; u.pitch = 1;
-    speechSynthesis.speak(u);
-  }catch(e){toast('เสียงกรีกไม่พร้อม / Greek audio not ready');}
+
+/* V1.6 audio engine: transplanted from the working GTA app pattern.
+   It uses native browser speech synthesis, el-GR language, Greek voice preference,
+   encoded audio button data attributes, chunking, keep-alive, watchdog reset,
+   and soft failure so buttons do not get stuck. */
+let greekVoice=null,greekVoicesReady=false;
+let audioSession=0;
+let audioKeepAliveTimer=null;
+
+function htmlDecodeAudio(s){
+  const txt=document.createElement('textarea');
+  txt.innerHTML=String(s||'');
+  return txt.value;
 }
+function encodeAudioText(text){
+  return encodeURIComponent(String(text||'').replace(/\s+/g,' ').trim());
+}
+function decodeAudioText(text){
+  try{return decodeURIComponent(String(text||''));}catch(e){return String(text||'');}
+}
+function getGreekVoice(){
+  if(!('speechSynthesis' in window))return null;
+  const voiceList=window.speechSynthesis.getVoices()||[];
+  return voiceList.find(v=>(v.lang||'').toLowerCase()==='el-gr')
+    || voiceList.find(v=>(v.lang||'').toLowerCase().startsWith('el'))
+    || voiceList.find(v=>/greek|ελλην/i.test(v.name||''))
+    || null;
+}
+function refreshGreekVoice(){
+  greekVoice=getGreekVoice()||greekVoice;
+  greekVoicesReady=true;
+  document.querySelectorAll('.js-audio').forEach(btn=>{
+    const label=btn.dataset.label||btn.textContent||'🔊 Hear Greek';
+    btn.disabled=false;
+    btn.classList.remove('audioDisabled');
+    if(!btn.dataset.playing)btn.textContent=label;
+    btn.title=greekVoice
+      ? ('Greek voice: '+(greekVoice.name||greekVoice.lang||'el-GR'))
+      : 'Hear Greek. If the voice sounds wrong, check the device Greek voice settings.';
+  });
+}
+function audioButton(text,label='🔊 Hear Greek'){
+  const raw=String(text||'').replace(/\s+/g,' ').trim();
+  if(!raw)return '';
+  const safeLabel=esc(label||'🔊 Hear Greek');
+  const packed=encodeAudioText(raw);
+  return `<button type="button" class="tiny-btn audioBtn js-audio" data-label="${safeLabel}" data-speak="${packed}">${safeLabel}</button>`;
+}
+function splitSpeechText(text){
+  const clean=htmlDecodeAudio(String(text||'')).replace(/\s+/g,' ').trim();
+  if(!clean)return [];
+  const sentenceParts=clean.split(/(?<=[.!;;?])\s+/).filter(Boolean);
+  const chunks=[];
+  sentenceParts.forEach(part=>{
+    let p=part.trim();
+    while(p.length>95){
+      let cut=Math.max(p.lastIndexOf(' ',95),p.lastIndexOf(',',95),p.lastIndexOf('·',95));
+      if(cut<35)cut=95;
+      chunks.push(p.slice(0,cut).trim());
+      p=p.slice(cut).trim();
+    }
+    if(p)chunks.push(p);
+  });
+  return chunks;
+}
+function stopAudioKeepAlive(){
+  if(audioKeepAliveTimer){clearInterval(audioKeepAliveTimer);audioKeepAliveTimer=null;}
+}
+function startAudioKeepAlive(mySession){
+  stopAudioKeepAlive();
+  audioKeepAliveTimer=setInterval(()=>{
+    if(mySession!==audioSession){stopAudioKeepAlive();return;}
+    try{
+      if(window.speechSynthesis && window.speechSynthesis.speaking && window.speechSynthesis.paused){
+        window.speechSynthesis.resume();
+      }
+    }catch(e){}
+  },300);
+}
+function setAudioButtonState(btn,state){
+  if(!btn)return;
+  const label=btn.dataset.label||'🔊 Hear Greek';
+  if(state==='playing'){
+    btn.dataset.playing='1';
+    btn.textContent='🔊 Playing...';
+    btn.disabled=true;
+  }else{
+    delete btn.dataset.playing;
+    btn.textContent=label;
+    btn.disabled=false;
+  }
+}
+function speak(text,btn,opts={}){
+  if(!('speechSynthesis' in window)){
+    toast('ไม่มีเสียงในเครื่องนี้ / Audio not supported');
+    setAudioButtonState(btn,'idle');
+    return;
+  }
+  const chunks=splitSpeechText(text);
+  if(!chunks.length){setAudioButtonState(btn,'idle');return;}
+  const mySession=++audioSession;
+  const rate=opts.rate||0.86;
+
+  try{window.speechSynthesis.cancel();}catch(e){}
+  try{window.speechSynthesis.resume&&window.speechSynthesis.resume();}catch(e){}
+  greekVoice=getGreekVoice()||greekVoice;
+
+  setAudioButtonState(btn,'playing');
+  startAudioKeepAlive(mySession);
+
+  let index=0;
+  let watchdog=null;
+
+  function cleanup(){
+    if(watchdog)clearTimeout(watchdog);
+    stopAudioKeepAlive();
+    setAudioButtonState(btn,'idle');
+  }
+  function failSoft(){
+    if(mySession!==audioSession)return;
+    try{window.speechSynthesis.cancel();}catch(e){}
+    cleanup();
+    toast('เสียงกรีกไม่พร้อม / Greek audio did not start. Try again or check Greek voice settings.');
+  }
+  function playNext(){
+    if(mySession!==audioSession)return;
+    if(index>=chunks.length){cleanup();return;}
+
+    const chunk=chunks[index++];
+    const utterance=new SpeechSynthesisUtterance(chunk);
+    utterance.lang='el-GR';
+    if(greekVoice)utterance.voice=greekVoice;
+    utterance.rate=rate;
+    utterance.pitch=1;
+    utterance.volume=1;
+
+    let finished=false;
+    utterance.onend=function(){
+      finished=true;
+      if(watchdog)clearTimeout(watchdog);
+      setTimeout(playNext,70);
+    };
+    utterance.onerror=function(){
+      finished=true;
+      if(watchdog)clearTimeout(watchdog);
+      setTimeout(playNext,120);
+    };
+    if(watchdog)clearTimeout(watchdog);
+    watchdog=setTimeout(()=>{
+      if(mySession!==audioSession||finished)return;
+      try{window.speechSynthesis.resume&&window.speechSynthesis.resume();}catch(e){}
+      setTimeout(()=>{ if(mySession===audioSession&&!finished) failSoft(); },900);
+    }, Math.max(3500, chunk.length*120));
+
+    try{window.speechSynthesis.speak(utterance);}catch(e){setTimeout(playNext,120);}
+  }
+  setTimeout(playNext,40);
+}
+function speakGreek(text,btn=null){
+  speak(String(text||''),btn);
+}
+function testGreekVoice(){
+  refreshGreekVoice();
+  const voiceName=greekVoice ? `${greekVoice.name || 'Greek voice'} (${greekVoice.lang || 'el-GR'})` : 'No explicit Greek voice listed; browser will use el-GR request.';
+  toast('Greek voice test: '+voiceName);
+  speakGreek('Καλημέρα. Γεια σας. Ευχαριστώ πολύ.');
+}
+if('speechSynthesis' in window){
+  window.speechSynthesis.onvoiceschanged=refreshGreekVoice;
+  document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden){
+      try{window.speechSynthesis.resume&&window.speechSynthesis.resume();}catch(e){}
+    }
+  });
+  setTimeout(refreshGreekVoice,0);
+  setTimeout(refreshGreekVoice,250);
+  setTimeout(refreshGreekVoice,800);
+  setTimeout(refreshGreekVoice,1600);
+  setTimeout(refreshGreekVoice,3000);
+}
+document.addEventListener('click',function(e){
+  const btn=e.target.closest('.js-audio');
+  if(!btn)return;
+  e.preventDefault();
+  e.stopPropagation();
+  refreshGreekVoice();
+  try{window.speechSynthesis&&window.speechSynthesis.cancel();}catch(e){}
+  speak(decodeAudioText(btn.dataset.speak||''),btn);
+});
+
 async function startRec(id){
   if(!navigator.mediaDevices || !window.MediaRecorder){toast('ไม่สามารถบันทึกเสียงได้ / Recording is not available'); return;}
   try{ const stream=await navigator.mediaDevices.getUserMedia({audio:true}); chunks=[]; recordingFor=id; mediaRecorder=new MediaRecorder(stream); mediaRecorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)}; mediaRecorder.onstop=()=>{const blob=new Blob(chunks,{type:'audio/webm'}); recordings[recordingFor]=URL.createObjectURL(blob); stream.getTracks().forEach(t=>t.stop()); toast('บันทึกแล้ว / Saved recording'); render();}; mediaRecorder.start(); toast('กำลังบันทึกเสียง / Recording...'); render(); }
@@ -46,8 +221,8 @@ function header(title,sub=''){return `<div class="screen-head"><button class="ba
 function go(s){screen=s; activeGroup='all'; matchState=null; gameState=null; render(); window.scrollTo(0,0)}
 
 function renderHome(){const c=counts(); const today=CONTENT.filter(x=>['start_good_morning','start_no_understand','talking_want_water'].includes(x.id)); app.innerHTML=`
- <div class="topbar"><div class="brand-block"><h1>Greek Daily Companion</h1><p>Thai Mode · ภาษากรีกสำหรับชีวิตประจำวัน</p></div><div class="badge">V1</div></div>
- <section class="hero"><h2>Start Today<br>เริ่มวันนี้</h2><p>Listen, see, tap, repeat. Greek with Thai and English support.</p><button class="primary-btn" onclick="startToday()">▶ เริ่มวันนี้ / Start Today</button></section>
+ <div class="topbar"><div class="brand-block"><h1>Greek Daily Companion</h1><p>Thai Mode · ภาษากรีกสำหรับชีวิตประจำวัน</p></div><div class="badge">V1.6</div></div>
+ <section class="hero"><h2>Start Today<br>เริ่มวันนี้</h2><p>Listen, see, tap, repeat. Greek with Thai and English support.</p><button class="primary-btn" onclick="startToday()">▶ เริ่มวันนี้ / Start Today</button><button class="secondary-btn" onclick="testGreekVoice()">🔊 Test Greek Voice</button></section>
  <div class="section-title"><h2>Progress</h2><span>${c.total} cards</span></div><div class="stats-row"><div class="stat-card"><strong>${c.m}</strong><span>Mastered</span></div><div class="stat-card"><strong>${c.r}</strong><span>Needs Review</span></div><div class="stat-card"><strong>${c.u}</strong><span>Unmarked</span></div></div>
  <div class="section-title"><h2>Learn</h2><span>4 modes</span></div><div class="grid">
  ${modeCard('🎙️','Speak Now','พูดตอนนี้','Say useful Greek immediately.','speak')}
@@ -59,14 +234,14 @@ function renderHome(){const c=counts(); const today=CONTENT.filter(x=>['start_go
  <div class="section-title"><h2>Review Stack</h2><span>${c.r} cards</span></div><button class="lesson-card" onclick="go('review')"><h3>🔁 Practice Needs Review</h3><p>Cards marked ต้องฝึกอีก appear here automatically.</p></button>
  ` + bottomNav();}
 function modeCard(emoji,title,thai,desc,target){return `<button class="mode-card" onclick="go('${target}')"><div class="emoji">${emoji}</div><div><h3>${title}<br>${thai}</h3><p>${desc}</p></div></button>`}
-function miniPhrase(x){return `<div class="mini-phrase"><button class="tiny-btn" onclick="speakGreek('${esc(x.greek)}')">▶ ฟัง</button><strong>${esc(x.greek)}</strong><small>${esc(x.thai)}<br>${esc(x.english)}</small></div>`}
+function miniPhrase(x){return `<div class="mini-phrase">${audioButton(x.greek,'▶ ฟัง')}<strong>${esc(x.greek)}</strong><small>${esc(x.thai)}<br>${esc(x.english)}</small></div>`}
 function startToday(){gameState={type:'daily',deck:sample(byMode('play'),5),i:0,score:0,stage:'q'}; screen='game'; render();}
 function renderList(mode,title,sub){let cards=byMode(mode); if(activeGroup!=='all')cards=cards.filter(c=>c.group===activeGroup); app.innerHTML=header(title,sub)+filters()+`<div class="card-list">${cards.map(cardHTML).join('')}</div>`+bottomNav();}
 function filters(){return `<div class="filter-row">${GROUPS.map(([g,n])=>`<button class="pill-btn ${activeGroup===g?'active':''}" onclick="activeGroup='${g}';render()">${n}</button>`).join('')}</div>`}
-function cardHTML(x){const st=statusOf(x.id); const rec=recordings[x.id]; return `<article class="content-card ${st}" id="card-${x.id}"><div class="card-top"><div class="pic">${x.image}</div><div class="card-main"><p class="greek">${esc(x.greek)}</p><p class="pron">${esc(x.thaiPronunciation)}</p><p class="thai">${esc(x.thai)}</p><p class="eng">${esc(x.english)}</p><p class="use">${esc(x.use)}</p></div></div><div class="actions"><button class="tiny-btn" onclick="speakGreek('${esc(x.greek)}')">▶ Greek</button><button class="tiny-btn" onclick="startRec('${x.id}')">🎙 Record</button><button class="tiny-btn" onclick="stopRec()">⏹ Stop</button><button class="tiny-btn" onclick="playRec('${x.id}')">▶ My Voice</button></div><div class="status-row"><button class="status-btn mastered ${st==='mastered'?'active':''}" onclick="setStatus('${x.id}','mastered')">จำได้แล้ว<br>Mastered</button><button class="status-btn review ${st==='review'?'active':''}" onclick="setStatus('${x.id}','review')">ต้องฝึกอีก<br>Needs Review</button><button class="status-btn unmarked ${st==='unmarked'?'active':''}" onclick="setStatus('${x.id}','unmarked')">ยังไม่เลือก<br>Unmarked</button></div></article>`}
+function cardHTML(x){const st=statusOf(x.id); const rec=recordings[x.id]; return `<article class="content-card ${st}" id="card-${x.id}"><div class="card-top"><div class="pic">${x.image}</div><div class="card-main"><p class="greek">${esc(x.greek)}</p><p class="pron">${esc(x.thaiPronunciation)}</p><p class="thai">${esc(x.thai)}</p><p class="eng">${esc(x.english)}</p><p class="use">${esc(x.use)}</p></div></div><div class="actions">${audioButton(x.greek,'▶ Greek')}<button class="tiny-btn" onclick="startRec('${x.id}')">🎙 Record</button><button class="tiny-btn" onclick="stopRec()">⏹ Stop</button><button class="tiny-btn" onclick="playRec('${x.id}')">▶ My Voice</button></div><div class="status-row"><button class="status-btn mastered ${st==='mastered'?'active':''}" onclick="setStatus('${x.id}','mastered')">จำได้แล้ว<br>Mastered</button><button class="status-btn review ${st==='review'?'active':''}" onclick="setStatus('${x.id}','review')">ต้องฝึกอีก<br>Needs Review</button><button class="status-btn unmarked ${st==='unmarked'?'active':''}" onclick="setStatus('${x.id}','unmarked')">ยังไม่เลือก<br>Unmarked</button></div></article>`}
 
 function newMatch(kind='mixed'){const pool = kind==='numbers'?CONTENT.filter(c=>c.group==='numbers'):kind==='directions'?CONTENT.filter(c=>c.group==='directions'):byMode('match'); const answer=pool[Math.floor(Math.random()*pool.length)]; const choices=sample(pool.filter(c=>c.id!==answer.id),3).concat(answer).sort(()=>Math.random()-.5); matchState={kind,answer,choices,attempts:0,feedback:'',reveal:false}; setTimeout(()=>speakGreek(answer.greek),200)}
-function renderMatch(){if(!matchState)newMatch('mixed'); const m=matchState; const mode=m.kind==='numbers'?'Number Tap':m.kind==='directions'?'Left / Right':m.kind==='picture'?'Picture Match':'Greek Audio → Meaning'; app.innerHTML=header('Matching / จับคู่',mode)+`<div class="grid"><button class="tiny-btn" onclick="newMatch('mixed');render()">Mixed</button><button class="tiny-btn" onclick="newMatch('numbers');render()">Numbers</button><button class="tiny-btn" onclick="newMatch('directions');render()">Directions</button><button class="tiny-btn" onclick="newMatch('picture');render()">Pictures</button></div><div class="match-box"><div class="prompt-text"><p>Listen first. ฟังก่อน</p><button class="secondary-btn" onclick="speakGreek('${esc(m.answer.greek)}')">▶ Play Greek</button>${m.kind==='picture'?`<div class="prompt-pic">${m.answer.image}</div>`:''}</div><div class="choices">${m.choices.map(ch=>choiceHTML(ch,m.kind)).join('')}</div><div class="feedback">${m.feedback||''}</div>${m.reveal?revealHTML(m.answer):''}</div>`+bottomNav();}
+function renderMatch(){if(!matchState)newMatch('mixed'); const m=matchState; const mode=m.kind==='numbers'?'Number Tap':m.kind==='directions'?'Left / Right':m.kind==='picture'?'Picture Match':'Greek Audio → Meaning'; app.innerHTML=header('Matching / จับคู่',mode)+`<div class="grid"><button class="tiny-btn" onclick="newMatch('mixed');render()">Mixed</button><button class="tiny-btn" onclick="newMatch('numbers');render()">Numbers</button><button class="tiny-btn" onclick="newMatch('directions');render()">Directions</button><button class="tiny-btn" onclick="newMatch('picture');render()">Pictures</button></div><div class="match-box"><div class="prompt-text"><p>Listen first. ฟังก่อน</p>${audioButton(m.answer.greek,'▶ Play Greek')}${m.kind==='picture'?`<div class="prompt-pic">${m.answer.image}</div>`:''}</div><div class="choices">${m.choices.map(ch=>choiceHTML(ch,m.kind)).join('')}</div><div class="feedback">${m.feedback||''}</div>${m.reveal?revealHTML(m.answer):''}</div>`+bottomNav();}
 function choiceHTML(ch,kind){let label=kind==='picture'?`<span class="big">${ch.image}</span><span>${esc(ch.english)}</span>`:kind==='numbers'?`<span class="big">${ch.image}</span><span>${esc(ch.thai)}</span>`:`<span>${esc(ch.thai)}</span><small>${esc(ch.english)}</small>`; return `<button class="choice-btn" onclick="checkMatch('${ch.id}')">${label}</button>`}
 function checkMatch(id){const m=matchState; if(id===m.answer.id){m.feedback='ถูกต้อง / Correct'; m.reveal=true; setStatusNoRender(m.answer.id,'mastered'); render(); return;} m.attempts++; if(m.attempts===1){m.feedback='ลองอีกครั้ง / Try again'; speakGreek(m.answer.greek);} else if(m.attempts===2){m.feedback='Hint: look at the picture / ดูรูปภาพ'; speakGreek(m.answer.greek);} else {m.feedback='Added to Review Stack'; m.reveal=true; setStatusNoRender(m.answer.id,'review');} render();}
 function setStatusNoRender(id,status){statuses[id]=status; saveStatuses();}
@@ -74,7 +249,7 @@ function revealHTML(x){return `<div class="answer-reveal"><strong>${esc(x.greek)
 
 function renderPlay(){if(gameState)return renderGame(); const games=[['daily','⭐','Daily 5','5 useful cards only.'],['picture','🖼️','Picture Match','Hear Greek, tap the picture.'],['numbers','🔢','Number Tap','Hear the number, tap it.'],['directions','⬅️','Left / Right Game','Practice arrows and positions.'],['cafe','☕','Café Order Game','Practice Veneti-style orders.'],['restaurant','🌶️','Restaurant Game','Spicy, pork, shrimp, bill.'],['repeat','🎙️','Hear & Repeat Star','Record yourself and replay.'],['review','🔁','Review Rescue','Practice Needs Review cards.']]; app.innerHTML=header('Play Mode / เล่น','Small games, no pressure')+`<div class="grid">${games.map(g=>`<button class="game-card" onclick="startGame('${g[0]}')"><div class="emoji">${g[1]}</div><h3>${g[2]}</h3><p>${g[3]}</p></button>`).join('')}</div>`+bottomNav();}
 function startGame(type){let pool=byMode('play'); if(type==='numbers')pool=CONTENT.filter(c=>c.group==='numbers'); if(type==='directions')pool=CONTENT.filter(c=>c.group==='directions'); if(type==='cafe')pool=CONTENT.filter(c=>c.group==='cafe'); if(type==='restaurant')pool=CONTENT.filter(c=>c.group==='restaurant'); if(type==='review')pool=CONTENT.filter(c=>statusOf(c.id)==='review'); if(type==='picture')pool=CONTENT.filter(c=>['numbers','directions','cafe','restaurant','foodhome','oneword'].includes(c.group)); if(!pool.length){toast('No cards yet / ยังไม่มีการ์ด'); return;} gameState={type,deck:sample(pool,Math.min(5,pool.length)),i:0,score:0,stage:'q'}; screen='game'; render();}
-function renderGame(){const g=gameState, x=g.deck[g.i]; if(!x){const total=g.deck.length; app.innerHTML=header('Game Complete / เสร็จแล้ว','Good practice')+`<div class="empty-card"><span class="emoji">⭐</span><h2>${g.score}/${total}</h2><p>Great work. เก่งมากค่ะ</p><button class="secondary-btn" onclick="gameState=null;go('play')">Back to Play</button></div>`+bottomNav(); return;} let choices=sample(CONTENT.filter(c=>c.id!==x.id && (g.type==='numbers'?c.group==='numbers':g.type==='directions'?c.group==='directions':true)),3).concat(x).sort(()=>Math.random()-.5); app.innerHTML=header('Play Mode / เล่น',`${g.i+1}/${g.deck.length}`)+`<div class="match-box"><div class="prompt-text"><div class="prompt-pic">${x.image}</div><button class="secondary-btn" onclick="speakGreek('${esc(x.greek)}')">▶ Hear Greek</button>${g.type==='repeat'?cardHTML(x):`<div class="choices">${choices.map(ch=>`<button class="choice-btn" onclick="checkGame('${ch.id}')"><span class="big">${ch.image}</span><span>${esc(ch.thai)}</span><small>${esc(ch.english)}</small></button>`).join('')}</div>`}<div class="feedback">${g.feedback||''}</div>${g.reveal?revealHTML(x):''}</div></div>`+bottomNav(); setTimeout(()=>speakGreek(x.greek),200)}
+function renderGame(){const g=gameState, x=g.deck[g.i]; if(!x){const total=g.deck.length; app.innerHTML=header('Game Complete / เสร็จแล้ว','Good practice')+`<div class="empty-card"><span class="emoji">⭐</span><h2>${g.score}/${total}</h2><p>Great work. เก่งมากค่ะ</p><button class="secondary-btn" onclick="gameState=null;go('play')">Back to Play</button></div>`+bottomNav(); return;} let choices=sample(CONTENT.filter(c=>c.id!==x.id && (g.type==='numbers'?c.group==='numbers':g.type==='directions'?c.group==='directions':true)),3).concat(x).sort(()=>Math.random()-.5); app.innerHTML=header('Play Mode / เล่น',`${g.i+1}/${g.deck.length}`)+`<div class="match-box"><div class="prompt-text"><div class="prompt-pic">${x.image}</div>${audioButton(x.greek,'▶ Hear Greek')}${g.type==='repeat'?cardHTML(x):`<div class="choices">${choices.map(ch=>`<button class="choice-btn" onclick="checkGame('${ch.id}')"><span class="big">${ch.image}</span><span>${esc(ch.thai)}</span><small>${esc(ch.english)}</small></button>`).join('')}</div>`}<div class="feedback">${g.feedback||''}</div>${g.reveal?revealHTML(x):''}</div></div>`+bottomNav(); setTimeout(()=>speakGreek(x.greek),200)}
 function checkGame(id){const g=gameState,x=g.deck[g.i]; if(id===x.id){g.score++; g.feedback='ถูกต้อง / Correct'; setStatusNoRender(x.id,'mastered'); g.i++; setTimeout(render,350);} else {g.feedback='ลองอีกครั้ง / Try again'; setStatusNoRender(x.id,'review'); speakGreek(x.greek); render();}}
 
 function renderReview(){let cards=CONTENT.filter(c=>statusOf(c.id)==='review'); app.innerHTML=header('Review Stack / ทบทวนอีกครั้ง',`${cards.length} cards need practice`)+(cards.length?`<div class="card-list">${cards.map(cardHTML).join('')}</div>`:`<div class="empty-card"><span class="emoji">🌟</span><h2>No Review Cards</h2><p>Needs Review cards will appear here automatically.</p></div>`)+bottomNav();}
